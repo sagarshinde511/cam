@@ -11,7 +11,7 @@ from io import BytesIO
 
 # Default username and password
 USERNAME = "admin"
-PASSWORD = "password123"
+PASSWORD = "admin"
 
 def authenticate(username, password):
     """Authenticate user based on provided username and password."""
