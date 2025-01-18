@@ -8,11 +8,369 @@ from datetime import datetime
 import pandas as pd
 import qrcode
 from io import BytesIO
+host = "82.180.143.66"
+user = "u263681140_students"
+passwd = "testStudents@123"
+db_name = "u263681140_students"
 
+HOST = "82.180.143.66"
+USER = "u263681140_students"
+PASSWORD = "testStudents@123"
+DATABASE = "u263681140_students"
 # Default username and password
 USERNAME = "admin"
 PASSWORD = "admin"
+def get_connection():
+    return mysql.connector.connect(
+        host="82.180.143.66",
+        user="u263681140_students",
+        passwd="testStudents@123",
+        database="u263681140_students"
+    )
 
+def fetch_book_details(book_id):
+    query = """
+        SELECT 
+            BookHistory.date AS BorrowDate,
+            BookHistory.RFidNo,
+            BookHistory.BookId,
+            BookHistory.ReturnDate,
+            BookInfo.BookName,
+            BookInfo.Author,
+            BookStudents.Name AS StudentName,
+            BookStudents.Branch,
+            BookStudents.Year
+        FROM 
+            BookHistory
+        JOIN 
+            BookInfo 
+        ON 
+            BookHistory.BookId = BookInfo.id
+        JOIN 
+            BookStudents 
+        ON 
+            BookHistory.RFidNo = BookStudents.RFidNo
+        WHERE 
+            BookHistory.BookId = %s
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(query, (book_id,))
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return pd.DataFrame(results)
+def update_stock(book_id, new_stock):
+    """
+    Updates the available stock for a book in the database.
+
+    Args:
+        book_id (str): The ID of the book to update.
+        new_stock (int): The new stock value to set.
+
+    Returns:
+        bool: True if the update was successful, False otherwise.
+    """
+    connection = None
+    try:
+        # Establish a connection to the database
+        connection = mysql.connector.connect(
+            host=HOST,
+            user=USER,
+            password=PASSWORD,
+            database=DATABASE
+        )
+
+        if connection.is_connected():
+            cursor = connection.cursor()
+
+            # Update the available stock for the book
+            update_query = "UPDATE BookInfo SET AvailableStock = %s WHERE id = %s"
+            cursor.execute(update_query, (new_stock, book_id))
+
+            # Commit the transaction
+            connection.commit()
+
+            # Check if rows were affected
+            if cursor.rowcount > 0:
+                print("Stock updated successfully.")
+                return True
+            else:
+                print("Book ID not found. No update made.")
+                return False
+
+    except Error as e:
+        print(f"Error while connecting to the database: {e}")
+        return False
+
+    finally:
+        if connection and connection.is_connected():
+            cursor.close()
+            connection.close()
+
+def fetch_data(book_id):
+    try:
+        # Establish connection to MySQL database
+        connection = mysql.connector.connect(
+            host=host,
+            user=user,
+            password=passwd,
+            database=db_name
+        )
+        if connection.is_connected():
+            cursor = connection.cursor(dictionary=True)
+            # Query to fetch book information
+            query = "SELECT BookName, Author, InStock, AvailableStock FROM BookInfo WHERE id = %s"
+            cursor.execute(query, (book_id,))
+            result = cursor.fetchone()
+            return result
+    except Error as e:
+        st.error(f"Error connecting to database: {e}")
+        return None
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+# Function to fetch RFidNo from the BookHistory table
+def read_qr_code_from_camera(issue_or_return):
+    st.title(f"QR Code Scanner - {issue_or_return.capitalize()} Book")
+
+    # Use Streamlit's camera input
+    camera_image = st.camera_input(f"Take a picture to scan for QR codes to {issue_or_return}.")
+
+    if camera_image:
+        # Convert the captured image to OpenCV format
+        image = Image.open(camera_image)
+        frame = np.array(image)
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+        # Decode QR codes in the frame using OpenCV's QRCodeDetector
+        qr_detector = cv2.QRCodeDetector()
+        value, points, _ = qr_detector.detectAndDecode(frame)
+
+        if value:
+            st.success(f"Book ID is: {value}")
+            return value
+        else:
+            st.warning("No QR Code detected.")
+            return None
+
+# Function to fetch RFidNo from the BookHistory table
+def fetch_rfid(book_id):
+    try:
+        # Establish connection to MySQL database
+        connection = mysql.connector.connect(
+            host=host,
+            user=user,
+            password=passwd,
+            database=db_name
+        )
+        if connection.is_connected():
+            cursor = connection.cursor(dictionary=True)
+            # Query to fetch RFidNo from BookHistory where id matches the book_id
+            query = "SELECT RFidNo FROM ReadRFID WHERE id = %s"
+            cursor.execute(query, (book_id,))
+            result = cursor.fetchone()
+            return result['RFidNo'] if result else None
+    except Error as e:
+        st.error(f"Error connecting to database: {e}")
+        return None
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+
+def create_history(rfid, book_id):
+    try:
+        # Connect to the MySQL database
+        conn = mysql.connector.connect(
+            host="82.180.143.66",
+            user="u263681140_students",
+            passwd="testStudents@123",
+            database="u263681140_students"
+        )
+        cursor = conn.cursor()
+
+        # Insert data into the BookHistory table
+        query = "INSERT INTO BookHistory (RFidNo, BookId) VALUES (%s, %s)"
+        cursor.execute(query, (rfid, book_id))
+        
+        # Commit the transaction
+        conn.commit()
+        
+        # Close the connection
+        cursor.close()
+        conn.close()
+        
+        return True  # Success
+    except mysql.connector.Error as e:
+        st.error(f"Database error: {e}")
+        return False  # Failure
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
+        return False
+
+
+def update_return_status_and_stock(book_id):
+    try:
+        # Connect to the MySQL database
+        conn = mysql.connector.connect(
+            host=host,
+            user=user,
+            password=passwd,
+            database=db_name
+        )
+        cursor = conn.cursor()
+
+        # Get the current date
+        current_date = datetime.now().strftime('%Y-%m-%d')
+
+        # Update ReturnStatus to 1 and set the ReturnDate where BookId matches and ReturnStatus is NULL
+        query = """
+            UPDATE BookHistory 
+            SET ReturnStatus = 1, ReturnDate = %s 
+            WHERE BookId = %s AND ReturnStatus IS NULL
+        """
+        cursor.execute(query, (current_date, book_id))
+        
+        # Increase the available stock by 1 for the book
+        stock_query = "UPDATE BookInfo SET AvailableStock = AvailableStock + 1 WHERE id = %s"
+        cursor.execute(stock_query, (book_id,))
+
+        # Commit the transaction
+        conn.commit()
+
+        # Check if rows were affected
+        if cursor.rowcount > 0:
+            st.success(f"Return status updated, return date set to {current_date}, and available stock increased for Book ID {book_id}.")
+        else:
+            st.warning("No matching entry found for return or the book is already returned.")
+
+        # Close the connection
+        cursor.close()
+        conn.close()
+        
+        return True  # Success
+    except mysql.connector.Error as e:
+        st.error(f"Database error: {e}")
+        return False  # Failure
+    except Exception as e:
+        st.error(f"Unexpected error: {e}")
+        return False
+def fetch_rfid_data():
+    """
+    Fetch the latest RFidNo from the ReadRFID table.
+    """
+    try:
+        # Establish connection to MySQL database
+        connection = mysql.connector.connect(
+            host=host,
+            user=user,
+            password=passwd,
+            database=db_name
+        )
+        if connection.is_connected():
+            cursor = connection.cursor(dictionary=True)
+            # Query to fetch the most recent RFidNo from the ReadRFID table
+            query = "SELECT RFidNo FROM ReadRFID ORDER BY id DESC LIMIT 1"
+            cursor.execute(query)
+            result = cursor.fetchone()
+            return result['RFidNo'] if result else None
+    except Error as e:
+        st.error(f"Error connecting to the database: {e}")
+        return None
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
+def generate_qr_code(url):
+    # Create a QR Code instance
+    qr = qrcode.QRCode(
+        version=5,  # Controls the size of the QR Code
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10,  # Size of each box in the QR code grid
+        border=4,  # Thickness of the border (in boxes)
+    )
+    
+    # Add the URL to the QR Code
+    qr.add_data(url)
+    qr.make(fit=True)
+
+    # Create an image from the QR Code instance
+    img = qr.make_image(fill_color="black", back_color="white")
+    return img
+
+def fetch_all_books():
+    query = "SELECT id, BookName, Author, Instock, AvailableStock FROM BookInfo"
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(query)
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return pd.DataFrame(results)
+    
+def update_book_info(book_id, book_name, author):
+    query = "UPDATE BookInfo SET BookName = %s, Author = %s WHERE id = %s"
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(query, (book_name, author, book_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# Streamlit app
+# Add a new book to the BookInfo table
+def add_new_book(book_name, author,Instock, AvailableStock):
+    query = "INSERT INTO BookInfo (BookName, Author, Instock, AvailableStock) VALUES (%s, %s, %s, %s)"
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(query, (book_name, author, Instock, AvailableStock))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def fetch_book_history(rfid_no):
+    """
+    Fetch all rows from BookHistory where RFidNo matches the given value.
+    """
+    try:
+        # Establish connection to MySQL database
+        connection = mysql.connector.connect(
+            host=host,
+            user=user,
+            password=passwd,
+            database=db_name
+        )
+        if connection.is_connected():
+            cursor = connection.cursor(dictionary=True)
+            # Query to fetch book history for the given RFidNo
+            query = """
+                SELECT 
+                    bh.BookId, 
+                    bi.BookName, 
+                    bi.Author, 
+                    bh.date AS IssueDate, 
+                    bh.ReturnStatus, 
+                    bh.ReturnDate 
+                FROM 
+                    BookHistory bh
+                INNER JOIN 
+                    BookInfo bi ON bh.BookId = bi.id
+                WHERE 
+                    bh.RFidNo = %s
+            """
+            cursor.execute(query, (rfid_no,))
+            result = cursor.fetchall()
+            return result
+    except Error as e:
+        st.error(f"Error connecting to the database: {e}")
+        return None
+    finally:
+        if connection.is_connected():
+            cursor.close()
+            connection.close()
 def authenticate(username, password):
     """Authenticate user based on provided username and password."""
     return username == USERNAME and password == PASSWORD
