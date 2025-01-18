@@ -18,8 +18,20 @@ USER = "u263681140_students"
 PASSWORD = "testStudents@123"
 DATABASE = "u263681140_students"
 # Default username and password
+# MySQL database connection details
+host = "82.180.143.66"
+user = "u263681140_students"
+passwd = "testStudents@123"
+db_name = "u263681140_students"
+
+HOST = "82.180.143.66"
+USER = "u263681140_students"
+PASSWORD = "testStudents@123"
+DATABASE = "u263681140_students"
+
 USERNAME = "admin"
 PASSWORD = "admin"
+
 def get_connection():
     return mysql.connector.connect(
         host="82.180.143.66",
@@ -27,6 +39,7 @@ def get_connection():
         passwd="testStudents@123",
         database="u263681140_students"
     )
+
 
 def fetch_book_details(book_id):
     query = """
@@ -300,6 +313,60 @@ def generate_qr_code(url):
     # Create an image from the QR Code instance
     img = qr.make_image(fill_color="black", back_color="white")
     return img
+def Update_RFIDNumber(new_rfid):
+    if new_rfid ==  0:
+        try:
+            # Connect to the database
+            conn = get_connection()
+            cursor = conn.cursor()
+
+            # SQL query to update RFidNo where id = 1
+            update_query = """
+                UPDATE ReadRFID 
+                SET RFidNo = %s 
+                WHERE id = 1
+            """
+
+            # Execute query
+            cursor.execute(update_query, (new_rfid,))
+
+            # Commit changes
+            conn.commit()
+
+            st.success("RFidNo updated successfully!")
+        except mysql.connector.Error as e:
+            st.error(f"Error updating RFidNo: {e}")
+        finally:
+            if conn.is_connected():
+                cursor.close()
+                conn.close()
+def Update_BookScanStatus(state):
+    if state ==  0 or state ==  1 :
+        try:
+            # Connect to the database
+            conn = get_connection()
+            cursor = conn.cursor()
+
+            # SQL query to update RFidNo where id = 1
+            update_query = """
+                UPDATE BookScanState 
+                SET status = %s 
+                WHERE id = 1
+            """
+
+            # Execute query
+            cursor.execute(update_query, (state,))
+
+            # Commit changes
+            conn.commit()
+
+            st.success("RFidNo updated successfully!")
+        except mysql.connector.Error as e:
+            st.error(f"Error updating RFidNo: {e}")
+        finally:
+            if conn.is_connected():
+                cursor.close()
+                conn.close()
 
 def fetch_all_books():
     query = "SELECT id, BookName, Author, Instock, AvailableStock FROM BookInfo"
@@ -371,6 +438,7 @@ def fetch_book_history(rfid_no):
         if connection.is_connected():
             cursor.close()
             connection.close()
+
 def authenticate(username, password):
     """Authenticate user based on provided username and password."""
     return username == USERNAME and password == PASSWORD
@@ -395,8 +463,8 @@ def main():
     if "logged_in" in st.session_state and st.session_state.logged_in:
         # Create tabs for the app
         tab1, tab2, tab3, tab4 = st.tabs(["QR Code Scanner", "Book Information Viewer", "Issued Book List", "All Books"])
-    
-    
+        
+        
         with tab1:
             issue_or_return = st.radio(
                 "What action would you like to perform?",
@@ -406,8 +474,10 @@ def main():
             # Only call `read_qr_code_from_camera` if "Issue Book" or "Return Book" is selected
             if issue_or_return in ["Issue Book", "Return Book"]:
                 book_id = read_qr_code_from_camera(issue_or_return.lower())
+                
                 if book_id:
                     st.session_state["book_id"] = book_id
+                    
     
             elif issue_or_return == "CheckBooks":
                 if st.button("Read RFID"):
@@ -418,6 +488,8 @@ def main():
                         if book_history:
                             st.subheader("Book History")
                             st.table(book_history)
+                            Update_RFIDNumber(0);
+                            
                         else:
                             st.warning("No book history found for the given RFID.")
                     else:
@@ -433,26 +505,35 @@ def main():
                     st.write(f"**In Stock:** {book_info['InStock']}")
                     st.write(f"**Available Stock:** {book_info['AvailableStock']}")
     
-                    if issue_or_return == "Issue" and int(book_info['AvailableStock']) > 0:
+                    if issue_or_return == "Issue Book" and int(book_info['AvailableStock']) > 0 :
                         # Add a button to assign the book
                         if st.button("Assign Book"):
-                            rfid = fetch_rfid(book_id)  # Fetch RFID for the book
-                            if rfid and int(rfid) != 0:
+                            rfid = fetch_rfid(1)  # Fetch RFID for the book
+                            if rfid != "0":
                                 st.success(f"RFID Number: {rfid}")
                                 create_history(rfid, book_id)
     
                                 # Update available stock in the database
                                 new_stock = int(book_info['AvailableStock']) - 1
                                 update_stock(book_id, new_stock)
+                                Update_RFIDNumber(0)
+                                Update_BookScanStatus(1)
+    
+                                #Update_BookScanStatus(0)
                                 st.info(f"Book assigned successfully. Updated available stock: {new_stock}")
                             else:
                                 st.error("RFID Number is either not assigned or invalid.")
-                    elif issue_or_return == "Return":
+                    elif issue_or_return == "Return Book":
                         # Handle return by updating the return status and increasing stock
                         if st.button("Return Book"):
                             update_return_status_and_stock(book_id)
+                            Update_RFIDNumber(0)
+                            #Update_BookScanStatus(0)
                     else:
-                        st.warning("This book is out of stock.")
+                        st.write(f"**Available Stock:** {book_info['AvailableStock']}")
+                        st.write(f"**issue_or_return:** {issue_or_return}")
+    
+                        st.warning("This book is out of stock. need to check")
                 else:
                     st.error("Book information could not be retrieved. Please check the Book ID.")
             else:
@@ -479,7 +560,7 @@ def main():
                 # Input for BookId
                 # Display all books
                 mode = st.radio("Select an Option", ["Fetch All Books", "Add Book Info", "Update Book Info", "Genrate QR Code"])
-            
+    
                 if mode == "Fetch All Books":
                     st.subheader("Books in Library")
                     try:
@@ -554,8 +635,7 @@ def main():
                                     except Exception as e:
                                         st.error(f"Error updating book: {e}")
                                 else:
-                                    st.warning("Please provide Book ID, Book Name, and Author.")
-    
+                                    st.warning("Please provide Book ID, Book Name, and Author.")    
     
 if __name__ == "__main__":
     main()
