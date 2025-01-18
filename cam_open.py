@@ -395,19 +395,20 @@ def main():
     if "logged_in" in st.session_state and st.session_state.logged_in:
         # Create tabs for the app
         tab1, tab2, tab3, tab4 = st.tabs(["QR Code Scanner", "Book Information Viewer", "Issued Book List", "All Books"])
-        
+    
+    
         with tab1:
             issue_or_return = st.radio(
                 "What action would you like to perform?",
                 ["CheckBooks", "Issue Book", "Return Book"]
             )
-
+    
             # Only call `read_qr_code_from_camera` if "Issue Book" or "Return Book" is selected
             if issue_or_return in ["Issue Book", "Return Book"]:
                 book_id = read_qr_code_from_camera(issue_or_return.lower())
                 if book_id:
                     st.session_state["book_id"] = book_id
-
+    
             elif issue_or_return == "CheckBooks":
                 if st.button("Read RFID"):
                     rfid_no = fetch_rfid_data()
@@ -431,7 +432,7 @@ def main():
                     st.write(f"**Author:** {book_info['Author']}")
                     st.write(f"**In Stock:** {book_info['InStock']}")
                     st.write(f"**Available Stock:** {book_info['AvailableStock']}")
-
+    
                     if issue_or_return == "Issue" and int(book_info['AvailableStock']) > 0:
                         # Add a button to assign the book
                         if st.button("Assign Book"):
@@ -439,7 +440,7 @@ def main():
                             if rfid and int(rfid) != 0:
                                 st.success(f"RFID Number: {rfid}")
                                 create_history(rfid, book_id)
-
+    
                                 # Update available stock in the database
                                 new_stock = int(book_info['AvailableStock']) - 1
                                 update_stock(book_id, new_stock)
@@ -518,7 +519,7 @@ def main():
                                 st.error(f"Error generating QR Code: {e}")
                         else:
                             st.warning("Please enter a valid URL or text.")
-                
+            
                 elif mode == "Add Book Info":
                     st.subheader("Add Book Info")
             
@@ -531,7 +532,7 @@ def main():
                         author = st.text_input("Author")
                         Instock = st.text_input("Instock")
                         AvailableStock = st.text_input("AvailableStock")
-
+    
                         submit = st.form_submit_button("Submit")
             
                         if submit:
@@ -554,9 +555,7 @@ def main():
                                         st.error(f"Error updating book: {e}")
                                 else:
                                     st.warning("Please provide Book ID, Book Name, and Author.")
-    else:
-        st.warning("Please login to access the application.")
-        
-
+    
+    
 if __name__ == "__main__":
     main()
