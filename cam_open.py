@@ -39,8 +39,6 @@ def get_connection():
         passwd="testStudents@123",
         database="u263681140_students"
     )
-
-
 def fetch_book_details(book_id):
     query = """
         SELECT 
@@ -378,11 +376,11 @@ def fetch_all_books():
     conn.close()
     return pd.DataFrame(results)
     
-def update_book_info(book_id, book_name, author):
-    query = "UPDATE BookInfo SET BookName = %s, Author = %s WHERE id = %s"
+def update_book_info(book_id, book_name, author, Instock, AvailableStock):
+    query = "UPDATE BookInfo SET BookName = %s, Author = %s, Instock = %s, AvailableStock = %s WHERE id = %s"
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(query, (book_name, author, book_id))
+    cursor.execute(query, (book_name, author, Instock, AvailableStock, book_id))
     conn.commit()
     cursor.close()
     conn.close()
@@ -394,6 +392,15 @@ def add_new_book(book_name, author,Instock, AvailableStock):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(query, (book_name, author, Instock, AvailableStock))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def add_new_student(student_name, rf, branch, year):
+    query = "INSERT INTO BookStudents (Name, RFidNo, Branch, Year) VALUES (%s, %s, %s, %s)"
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(query, (student_name, rf, branch, year))
     conn.commit()
     cursor.close()
     conn.close()
@@ -559,7 +566,7 @@ def main():
                 st.subheader("Serch Book Here")
                 # Input for BookId
                 # Display all books
-                mode = st.radio("Select an Option", ["Fetch All Books", "Add Book Info", "Update Book Info", "Genrate QR Code"])
+                mode = st.radio("Select an Option", ["Fetch All Books", "Add Book Info", "Add Student", "Genrate QR Code"])
     
                 if mode == "Fetch All Books":
                     st.subheader("Books in Library")
@@ -600,42 +607,62 @@ def main():
                                 st.error(f"Error generating QR Code: {e}")
                         else:
                             st.warning("Please enter a valid URL or text.")
-            
+                #here        
                 elif mode == "Add Book Info":
                     st.subheader("Add Book Info")
-            
+                
+                    # Radio button to choose action
+                    action = st.radio("Choose Action", ["Add New Book", "Update Existing Book"])
+                
                     # Book addition or update form
                     with st.form("book_form"):
-                        #action = st.radio("Select Action", ["Add New Book", "Update Existing Book])
-                        #if action == "Update Existing Book":
-                        #    book_id = st.text_input("Book ID (for Update)")
+                        if action == "Update Existing Book":
+                            book_id = st.text_input("Book ID (for Update)")
+                
                         book_name = st.text_input("Book Name")
                         author = st.text_input("Author")
-                        Instock = st.text_input("Instock")
-                        AvailableStock = st.text_input("AvailableStock")
-    
+                        Instock = st.text_input("In Stock")
+                        AvailableStock = st.text_input("Available Stock")
+                
                         submit = st.form_submit_button("Submit")
-            
+                
                         if submit:
                             if action == "Add New Book":
                                 if book_name.strip() and author.strip():
                                     try:
-                                        add_new_book(book_name, author,Instock, AvailableStock)
+                                        add_new_book(book_name, author, Instock, AvailableStock)
                                         st.success(f"Book '{book_name}' by {author} added successfully!")
                                     except Exception as e:
                                         st.error(f"Error adding book: {e}")
                                 else:
                                     st.warning("Please provide both Book Name and Author.")
-                            
                             elif action == "Update Existing Book":
                                 if book_id.strip() and book_name.strip() and author.strip():
                                     try:
-                                        update_book_info(book_id, book_name, author)
-                                        st.success(f"Book ID '{book_id}' updated to '{book_name}' by {author} successfully!")
+                                        update_book_info(book_id, book_name, author, Instock, AvailableStock)
+                                        st.success(f"Book ID '{book_id}' updated successfully!")
                                     except Exception as e:
                                         st.error(f"Error updating book: {e}")
                                 else:
-                                    st.warning("Please provide Book ID, Book Name, and Author.")    
+                                    st.warning("Please provide Book ID, Book Name, and Author.")
+                elif mode == "Add Student":
+                    st.subheader("Add Students Info")            
+                    # Book addition or update form
+                    #with st.form("book_form"):
+            
+                    student_name = st.text_input("Student Name")
+                    rf = st.text_input("RF Number")
+                    branch = st.text_input("Branch")
+                    year = st.text_input("Acadamic Year")
+            
+                    #Ssubmit = st.form_submit_button("Submit")
+                    if st.button("Add Student"):
+                            if student_name.strip() and rf.strip():
+                                try:
+                                    add_new_student(student_name, rf, branch, year)
+                                    st.success(f"Student '{student_name}' by {rf} added successfully!")
+                                except Exception as e:
+                                    st.error(f"Error adding book: {e}")
     
 if __name__ == "__main__":
     main()
