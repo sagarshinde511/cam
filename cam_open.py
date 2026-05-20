@@ -9,14 +9,7 @@ from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
 # Streamlit App UI Configuration
 st.set_page_config(page_title="Motion & Pose Detector", layout="centered")
 st.title("🏃‍♂️ Real-Time Motion & Pose Tracking")
-st.text("This app detects body poses, draws landmarks, and syncs status data with your database.")
-
-# Initialize MediaPipe Pose
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
+st.text("This app detects body poses and syncs status data with your database.")
 
 # Configuration Constants
 API_URL = "https://aeprojecthub.in/Dairy/SwitchUpdateState.php"
@@ -80,29 +73,44 @@ def update_motion_end(row_id):
 # --- Video Processing Class ---
 class PoseTransformer(VideoTransformerBase):
     def __init__(self):
-        # We use instance variables to track states across continuous video frames
         self.motion_active = False
         self.current_session_id = None
+        
+        # Initialize the Modern MediaPipe Tasks Pose Landmarker
+        # This approach works out of the box with modern MediaPipe releases
+        BaseOptions = mp.tasks.BaseOptions
+        PoseLandmarker = mp.tasks.vision.PoseLandmarker
+        PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
+        VisionRunningMode = mp.tasks.vision.RunningMode
+
+        # Download model dynamically if it isn't bundled locally
+        model_url = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
+        model_bytes = requests.get(model_url).content
+        
+        options = PoseLandmarkerOptions(
+            base_options=BaseOptions(model_asset_buffer=model_bytes),
+            running_mode=VisionRunningMode.IMAGE
+        )
+        self.landmarker = PoseLandmarker.create_from_options(options)
 
     def transform(self, frame):
-        # Convert streamlit-webrtc frame format to a usable OpenCV BGR image
         img = frame.to_ndarray(format="bgr24")
+        
+        # Convert frame format for MediaPipe Image Tasks
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img)
+        detection_result = self.landmarker.detect(mp_image)
 
-        # MediaPipe processing
-        image_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        image_rgb.flags.writeable = False
-        results = pose.process(image_rgb)
-        image_rgb.flags.writeable = True
-
-        # Handle landmarks and state state toggles
-        if results.pose_landmarks:
-            mp.solutions.drawing_utils.draw_landmarks(
-                img, results.pose_landmarks, mp_pose.POSE_CONNECTIONS
-            )
+        # Handle detection state flips
+        if detection_result.pose_landmarks:
             cv2.putText(img, "Motion Detected (State: 1)", (10, 40), 
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
             
-            # Transition: Changed from NO motion to MOTION detected
+            # Draw rough connection dots for reference
+            for landmark in detection_result.pose_landmarks[0]:
+                x = int(landmark.x * img.shape[1])
+                y = int(landmark.y * img.shape[0])
+                cv2.circle(img, (x, y), 3, (0, 255, 0), -1)
+
             if not self.motion_active:
                 self.motion_active = True
                 update_mobile_state('1')
@@ -112,7 +120,6 @@ class PoseTransformer(VideoTransformerBase):
             cv2.putText(img, "No Motion (State: 0)", (10, 40), 
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
             
-            # Transition: Changed from MOTION to NO motion detected
             if self.motion_active:
                 self.motion_active = False
                 update_mobile_state('0')
@@ -122,7 +129,6 @@ class PoseTransformer(VideoTransformerBase):
         return img
 
     def on_ended(self):
-        """ Cleans up and clears database flags when user stops the stream """
         if self.motion_active:
             update_mobile_state('0')
             update_motion_end(self.current_session_id)
@@ -139,7 +145,6 @@ ctx = webrtc_streamer(
     media_stream_constraints={"video": True, "audio": False},
 )
 
-# Optional UI status indicators below the feed
 if ctx.state.playing:
     st.success("Webcam stream is active. Monitoring for human poses...")
 else:
