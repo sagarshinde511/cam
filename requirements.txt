@@ -1,6 +1,7 @@
 streamlit
 streamlit-webrtc
-mediapipe
+protobuf==3.20.3
+mediapipe==0.10.14
 requests
 mysql-connector-python
 opencv-python-headless
