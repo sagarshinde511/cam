@@ -1,668 +1,146 @@
-import streamlit as st
 import cv2
-from PIL import Image
-import numpy as np
+import mediapipe as mp
+import requests
 import mysql.connector
-from mysql.connector import Error
 from datetime import datetime
-import pandas as pd
-import qrcode
-from io import BytesIO
-host = "82.180.143.66"
-user = "u263681140_students"
-passwd = "testStudents@123"
-db_name = "u263681140_students"
+import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
 
-HOST = "82.180.143.66"
-USER = "u263681140_students"
-PASSWORD = "testStudents@123"
-DATABASE = "u263681140_students"
-# Default username and password
-# MySQL database connection details
-host = "82.180.143.66"
-user = "u263681140_students"
-passwd = "testStudents@123"
-db_name = "u263681140_students"
+# Streamlit App UI Configuration
+st.set_page_config(page_title="Motion & Pose Detector", layout="centered")
+st.title("🏃‍♂️ Real-Time Motion & Pose Tracking")
+st.text("This app detects body poses, draws landmarks, and syncs status data with your database.")
 
-HOST = "82.180.143.66"
-USER = "u263681140_students"
-PASSWORD = "testStudents@123"
-DATABASE = "u263681140_students"
+# Initialize MediaPipe Pose
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose(
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
 
-USERNAME = "admin"
-PASSWORD = "admin"
+# Configuration Constants
+API_URL = "https://aeprojecthub.in/Dairy/SwitchUpdateState.php"
+DB_CONFIG = {
+    'host': "82.180.143.66",
+    'user': "u263681140_AttendanceInt",
+    'password': "SagarAtten@12345",
+    'database': "u263681140_Attendance"
+}
 
-def get_connection():
-    return mysql.connector.connect(
-        host="82.180.143.66",
-        user="u263681140_students",
-        passwd="testStudents@123",
-        database="u263681140_students"
-    )
-def fetch_book_details(book_id):
-    query = """
-        SELECT 
-            BookHistory.date AS BorrowDate,
-            BookHistory.RFidNo,
-            BookHistory.BookId,
-            BookHistory.ReturnDate,
-            BookInfo.BookName,
-            BookInfo.Author,
-            BookStudents.Name AS StudentName,
-            BookStudents.Branch,
-            BookStudents.Year
-        FROM 
-            BookHistory
-        JOIN 
-            BookInfo 
-        ON 
-            BookHistory.BookId = BookInfo.id
-        JOIN 
-            BookStudents 
-        ON 
-            BookHistory.RFidNo = BookStudents.RFidNo
-        WHERE 
-            BookHistory.BookId = %s
-    """
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute(query, (book_id,))
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return pd.DataFrame(results)
-def update_stock(book_id, new_stock):
-    """
-    Updates the available stock for a book in the database.
-
-    Args:
-        book_id (str): The ID of the book to update.
-        new_stock (int): The new stock value to set.
-
-    Returns:
-        bool: True if the update was successful, False otherwise.
-    """
-    connection = None
+# --- Database & API Functions ---
+def update_mobile_state(state_value):
     try:
-        # Establish a connection to the database
-        connection = mysql.connector.connect(
-            host=HOST,
-            user=USER,
-            password=PASSWORD,
-            database=DATABASE
-        )
-
-        if connection.is_connected():
-            cursor = connection.cursor()
-
-            # Update the available stock for the book
-            update_query = "UPDATE BookInfo SET AvailableStock = %s WHERE id = %s"
-            cursor.execute(update_query, (new_stock, book_id))
-
-            # Commit the transaction
-            connection.commit()
-
-            # Check if rows were affected
-            if cursor.rowcount > 0:
-                print("Stock updated successfully.")
-                return True
-            else:
-                print("Book ID not found. No update made.")
-                return False
-
-    except Error as e:
-        print(f"Error while connecting to the database: {e}")
-        return False
-
-    finally:
-        if connection and connection.is_connected():
-            cursor.close()
-            connection.close()
-
-def fetch_data(book_id):
-    try:
-        # Establish connection to MySQL database
-        connection = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=passwd,
-            database=db_name
-        )
-        if connection.is_connected():
-            cursor = connection.cursor(dictionary=True)
-            # Query to fetch book information
-            query = "SELECT BookName, Author, InStock, AvailableStock FROM BookInfo WHERE id = %s"
-            cursor.execute(query, (book_id,))
-            result = cursor.fetchone()
-            return result
-    except Error as e:
-        st.error(f"Error connecting to database: {e}")
-        return None
-    finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
-
-# Function to fetch RFidNo from the BookHistory table
-def read_qr_code_from_camera(issue_or_return):
-    st.title(f"QR Code Scanner - {issue_or_return.capitalize()} Book")
-
-    # Use Streamlit's camera input
-    camera_image = st.camera_input(f"Take a picture to scan for QR codes to {issue_or_return}.")
-
-    if camera_image:
-        # Convert the captured image to OpenCV format
-        image = Image.open(camera_image)
-        frame = np.array(image)
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-        # Decode QR codes in the frame using OpenCV's QRCodeDetector
-        qr_detector = cv2.QRCodeDetector()
-        value, points, _ = qr_detector.detectAndDecode(frame)
-
-        if value:
-            st.success(f"Book ID is: {value}")
-            return value
+        params = {'state': state_value}
+        response = requests.get(API_URL, params=params, timeout=5)
+        if response.status_code == 200:
+            print(f"Server response: {response.text.strip()}")
         else:
-            st.warning("No QR Code detected.")
-            return None
+            print(f"HTTP Error: {response.status_code}")
+    except Exception as e:
+        print(f"Error calling API: {e}")
 
-# Function to fetch RFidNo from the BookHistory table
-def fetch_rfid(book_id):
+def insert_motion_start():
     try:
-        # Establish connection to MySQL database
-        connection = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=passwd,
-            database=db_name
-        )
-        if connection.is_connected():
-            cursor = connection.cursor(dictionary=True)
-            # Query to fetch RFidNo from BookHistory where id matches the book_id
-            query = "SELECT RFidNo FROM ReadRFID WHERE id = %s"
-            cursor.execute(query, (book_id,))
-            result = cursor.fetchone()
-            return result['RFidNo'] if result else None
-    except Error as e:
-        st.error(f"Error connecting to database: {e}")
-        return None
-    finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
-
-def create_history(rfid, book_id):
-    try:
-        # Connect to the MySQL database
-        conn = mysql.connector.connect(
-            host="82.180.143.66",
-            user="u263681140_students",
-            passwd="testStudents@123",
-            database="u263681140_students"
-        )
+        conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
-
-        # Insert data into the BookHistory table
-        query = "INSERT INTO BookHistory (RFidNo, BookId) VALUES (%s, %s)"
-        cursor.execute(query, (rfid, book_id))
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        query = "INSERT INTO MotionDetected (start) VALUES (%s)"
         
-        # Commit the transaction
+        cursor.execute(query, (current_time,))
         conn.commit()
+        inserted_id = cursor.lastrowid
+        print(f"Database: Inserted start session at {current_time} (ID: {inserted_id})")
         
-        # Close the connection
         cursor.close()
         conn.close()
-        
-        return True  # Success
-    except mysql.connector.Error as e:
-        st.error(f"Database error: {e}")
-        return False  # Failure
+        return inserted_id
     except Exception as e:
-        st.error(f"Unexpected error: {e}")
-        return False
+        print(f"Database Error on Insert: {e}")
+        return None
 
-
-def update_return_status_and_stock(book_id):
+def update_motion_end(row_id):
+    if row_id is None:
+        return
     try:
-        # Connect to the MySQL database
-        conn = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=passwd,
-            database=db_name
-        )
+        conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
-
-        # Get the current date
-        current_date = datetime.now().strftime('%Y-%m-%d')
-
-        # Update ReturnStatus to 1 and set the ReturnDate where BookId matches and ReturnStatus is NULL
-        query = """
-            UPDATE BookHistory 
-            SET ReturnStatus = 1, ReturnDate = %s 
-            WHERE BookId = %s AND ReturnStatus IS NULL
-        """
-        cursor.execute(query, (current_date, book_id))
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        query = "UPDATE MotionDetected SET end = %s WHERE id = %s"
         
-        # Increase the available stock by 1 for the book
-        stock_query = "UPDATE BookInfo SET AvailableStock = AvailableStock + 1 WHERE id = %s"
-        cursor.execute(stock_query, (book_id,))
-
-        # Commit the transaction
+        cursor.execute(query, (current_time, row_id))
         conn.commit()
-
-        # Check if rows were affected
-        if cursor.rowcount > 0:
-            st.success(f"Return status updated, return date set to {current_date}, and available stock increased for Book ID {book_id}.")
-        else:
-            st.warning("No matching entry found for return or the book is already returned.")
-
-        # Close the connection
+        print(f"Database: Updated end session at {current_time} for ID: {row_id}")
+        
         cursor.close()
         conn.close()
-        
-        return True  # Success
-    except mysql.connector.Error as e:
-        st.error(f"Database error: {e}")
-        return False  # Failure
     except Exception as e:
-        st.error(f"Unexpected error: {e}")
-        return False
-def fetch_rfid_data():
-    """
-    Fetch the latest RFidNo from the ReadRFID table.
-    """
-    try:
-        # Establish connection to MySQL database
-        connection = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=passwd,
-            database=db_name
-        )
-        if connection.is_connected():
-            cursor = connection.cursor(dictionary=True)
-            # Query to fetch the most recent RFidNo from the ReadRFID table
-            query = "SELECT RFidNo FROM ReadRFID ORDER BY id DESC LIMIT 1"
-            cursor.execute(query)
-            result = cursor.fetchone()
-            return result['RFidNo'] if result else None
-    except Error as e:
-        st.error(f"Error connecting to the database: {e}")
-        return None
-    finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
-def generate_qr_code(url):
-    # Create a QR Code instance
-    qr = qrcode.QRCode(
-        version=5,  # Controls the size of the QR Code
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=10,  # Size of each box in the QR code grid
-        border=4,  # Thickness of the border (in boxes)
-    )
-    
-    # Add the URL to the QR Code
-    qr.add_data(url)
-    qr.make(fit=True)
+        print(f"Database Error on Update: {e}")
 
-    # Create an image from the QR Code instance
-    img = qr.make_image(fill_color="black", back_color="white")
-    return img
-def Update_RFIDNumber(new_rfid):
-    if new_rfid ==  0:
-        try:
-            # Connect to the database
-            conn = get_connection()
-            cursor = conn.cursor()
 
-            # SQL query to update RFidNo where id = 1
-            update_query = """
-                UPDATE ReadRFID 
-                SET RFidNo = %s 
-                WHERE id = 1
-            """
+# --- Video Processing Class ---
+class PoseTransformer(VideoTransformerBase):
+    def __init__(self):
+        # We use instance variables to track states across continuous video frames
+        self.motion_active = False
+        self.current_session_id = None
 
-            # Execute query
-            cursor.execute(update_query, (new_rfid,))
+    def transform(self, frame):
+        # Convert streamlit-webrtc frame format to a usable OpenCV BGR image
+        img = frame.to_ndarray(format="bgr24")
 
-            # Commit changes
-            conn.commit()
+        # MediaPipe processing
+        image_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        image_rgb.flags.writeable = False
+        results = pose.process(image_rgb)
+        image_rgb.flags.writeable = True
 
-            st.success("RFidNo updated successfully!")
-        except mysql.connector.Error as e:
-            st.error(f"Error updating RFidNo: {e}")
-        finally:
-            if conn.is_connected():
-                cursor.close()
-                conn.close()
-def Update_BookScanStatus(state):
-    if state ==  0 or state ==  1 :
-        try:
-            # Connect to the database
-            conn = get_connection()
-            cursor = conn.cursor()
-
-            # SQL query to update RFidNo where id = 1
-            update_query = """
-                UPDATE BookScanState 
-                SET status = %s 
-                WHERE id = 1
-            """
-
-            # Execute query
-            cursor.execute(update_query, (state,))
-
-            # Commit changes
-            conn.commit()
-
-            st.success("RFidNo updated successfully!")
-        except mysql.connector.Error as e:
-            st.error(f"Error updating RFidNo: {e}")
-        finally:
-            if conn.is_connected():
-                cursor.close()
-                conn.close()
-
-def fetch_all_books():
-    query = "SELECT id, BookName, Author, Instock, AvailableStock FROM BookInfo"
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute(query)
-    results = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return pd.DataFrame(results)
-    
-def update_book_info(book_id, book_name, author, Instock, AvailableStock):
-    query = "UPDATE BookInfo SET BookName = %s, Author = %s, Instock = %s, AvailableStock = %s WHERE id = %s"
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(query, (book_name, author, Instock, AvailableStock, book_id))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-# Streamlit app
-# Add a new book to the BookInfo table
-def add_new_book(book_name, author,Instock, AvailableStock):
-    query = "INSERT INTO BookInfo (BookName, Author, Instock, AvailableStock) VALUES (%s, %s, %s, %s)"
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(query, (book_name, author, Instock, AvailableStock))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-def add_new_student(student_name, rf, branch, year):
-    query = "INSERT INTO BookStudents (Name, RFidNo, Branch, Year) VALUES (%s, %s, %s, %s)"
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(query, (student_name, rf, branch, year))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-def fetch_book_history(rfid_no):
-    """
-    Fetch all rows from BookHistory where RFidNo matches the given value.
-    """
-    try:
-        # Establish connection to MySQL database
-        connection = mysql.connector.connect(
-            host=host,
-            user=user,
-            password=passwd,
-            database=db_name
-        )
-        if connection.is_connected():
-            cursor = connection.cursor(dictionary=True)
-            # Query to fetch book history for the given RFidNo
-            query = """
-                SELECT 
-                    bh.BookId, 
-                    bi.BookName, 
-                    bi.Author, 
-                    bh.date AS IssueDate, 
-                    bh.ReturnStatus, 
-                    bh.ReturnDate 
-                FROM 
-                    BookHistory bh
-                INNER JOIN 
-                    BookInfo bi ON bh.BookId = bi.id
-                WHERE 
-                    bh.RFidNo = %s
-            """
-            cursor.execute(query, (rfid_no,))
-            result = cursor.fetchall()
-            return result
-    except Error as e:
-        st.error(f"Error connecting to the database: {e}")
-        return None
-    finally:
-        if connection.is_connected():
-            cursor.close()
-            connection.close()
-
-def authenticate(username, password):
-    """Authenticate user based on provided username and password."""
-    return username == USERNAME and password == PASSWORD
-
-def main():
-    # Display login form on the sidebar
-    with st.sidebar:
-        st.header("Login to Access the App")
-        username = st.text_input("Username", "")
-        password = st.text_input("Password", "", type="password")
-        login_button = st.button("Login")
-
-        # Check if the login button is clicked
-        if login_button:
-            if authenticate(username, password):
-                st.session_state.logged_in = True
-                st.sidebar.success("Login successful!")
-            else:
-                st.sidebar.error("Invalid username or password.")
-
-    # Only show the main content if the user is authenticated
-    if "logged_in" in st.session_state and st.session_state.logged_in:
-        # Create tabs for the app
-        tab1, tab2, tab3, tab4 = st.tabs(["QR Code Scanner", "Book Information Viewer", "Issued Book List", "All Books"])
-        
-        
-        with tab1:
-            issue_or_return = st.radio(
-                "What action would you like to perform?",
-                ["CheckBooks", "Issue Book", "Return Book"]
+        # Handle landmarks and state state toggles
+        if results.pose_landmarks:
+            mp.solutions.drawing_utils.draw_landmarks(
+                img, results.pose_landmarks, mp_pose.POSE_CONNECTIONS
             )
-    
-            # Only call `read_qr_code_from_camera` if "Issue Book" or "Return Book" is selected
-            if issue_or_return in ["Issue Book", "Return Book"]:
-                book_id = read_qr_code_from_camera(issue_or_return.lower())
-                
-                if book_id:
-                    st.session_state["book_id"] = book_id
-                    
-    
-            elif issue_or_return == "CheckBooks":
-                if st.button("Read RFID"):
-                    rfid_no = fetch_rfid_data()
-                    if rfid_no:
-                        st.success(f"RFID Number: {rfid_no}")
-                        book_history = fetch_book_history(rfid_no)
-                        if book_history:
-                            st.subheader("Book History")
-                            st.table(book_history)
-                            Update_RFIDNumber(0);
-                            
-                        else:
-                            st.warning("No book history found for the given RFID.")
-                    else:
-                        st.error("No RFID data available in the ReadRFID table.")
-        with tab2:
-            if "book_id" in st.session_state:
-                book_id = st.session_state["book_id"]
-                book_info = fetch_data(book_id)
-                if book_info:
-                    st.subheader("Book Information")
-                    st.write(f"**Book Name:** {book_info['BookName']}")
-                    st.write(f"**Author:** {book_info['Author']}")
-                    st.write(f"**In Stock:** {book_info['InStock']}")
-                    st.write(f"**Available Stock:** {book_info['AvailableStock']}")
-    
-                    if issue_or_return == "Issue Book" and int(book_info['AvailableStock']) > 0 :
-                        # Add a button to assign the book
-                        if st.button("Assign Book"):
-                            rfid = fetch_rfid(1)  # Fetch RFID for the book
-                            if rfid != "0":
-                                st.success(f"RFID Number: {rfid}")
-                                create_history(rfid, book_id)
-    
-                                # Update available stock in the database
-                                new_stock = int(book_info['AvailableStock']) - 1
-                                update_stock(book_id, new_stock)
-                                Update_RFIDNumber(0)
-                                Update_BookScanStatus(1)
-    
-                                #Update_BookScanStatus(0)
-                                st.info(f"Book assigned successfully. Updated available stock: {new_stock}")
-                            else:
-                                st.error("RFID Number is either not assigned or invalid.")
-                    elif issue_or_return == "Return Book":
-                        # Handle return by updating the return status and increasing stock
-                        if st.button("Return Book"):
-                            update_return_status_and_stock(book_id)
-                            Update_RFIDNumber(0)
-                            #Update_BookScanStatus(0)
-                    else:
-                        st.write(f"**Available Stock:** {book_info['AvailableStock']}")
-                        st.write(f"**issue_or_return:** {issue_or_return}")
-    
-                        st.warning("This book is out of stock. need to check")
-                else:
-                    st.error("Book information could not be retrieved. Please check the Book ID.")
-            else:
-                st.info("Please scan a QR code to view book information.")
-        with tab3:
-                st.subheader("Serch Book Here")
-                # Input for BookId
-                book_id = st.text_input("Enter BookId to search:")
-                
-                if st.button("Search"):
-                    if book_id.strip():
-                        try:
-                            data = fetch_book_details(book_id)
-                            if not data.empty:
-                                st.dataframe(data)
-                            else:
-                                st.write("No data found for the given BookId.")
-                        except Exception as e:
-                            st.error(f"An error occurred: {e}")
-                    else:
-                        st.warning("Please enter a valid BookId.")
-        with tab4:
-                st.subheader("Serch Book Here")
-                # Input for BookId
-                # Display all books
-                mode = st.radio("Select an Option", ["Fetch All Books", "Add Book Info", "Add Student", "Genrate QR Code"])
-    
-                if mode == "Fetch All Books":
-                    st.subheader("Books in Library")
-                    try:
-                        books = fetch_all_books()
-                        if not books.empty:
-                            st.dataframe(books)
-                        else:
-                            st.write("No books found in the library.")
-                    except Exception as e:
-                        st.error(f"Error fetching books: {e}")
-                elif mode == "Genrate QR Code":
-                    st.subheader("Genrate QR code for Book")
-                    url = st.text_input("Enter BookID to Genrate QR Code:")
-                    
-                    if st.button("Generate QR Code"):
-                        if url.strip():
-                            try:
-                                # Generate QR code
-                                qr_image = generate_qr_code(url)
-                                
-                                # Convert QR code image to BytesIO for display
-                                buffer = BytesIO()
-                                qr_image.save(buffer, format="PNG")
-                                buffer.seek(0)
-                                
-                                # Display the QR code
-                                st.image(Image.open(buffer), caption="Your QR Code", use_column_width=True)
-                                
-                                # Provide download option
-                                st.download_button(
-                                    label="Download QR Code",
-                                    data=buffer,
-                                    file_name= url + "qrcode.png",
-                                    mime="image/png"
-                                )
-                            except Exception as e:
-                                st.error(f"Error generating QR Code: {e}")
-                        else:
-                            st.warning("Please enter a valid URL or text.")
-                #here        
-                elif mode == "Add Book Info":
-                    st.subheader("Add Book Info")
-                
-                    # Radio button to choose action
-                    action = st.radio("Choose Action", ["Add New Book", "Update Existing Book"])
-                
-                    # Book addition or update form
-                    with st.form("book_form"):
-                        if action == "Update Existing Book":
-                            book_id = st.text_input("Book ID (for Update)")
-                
-                        book_name = st.text_input("Book Name")
-                        author = st.text_input("Author")
-                        Instock = st.text_input("In Stock")
-                        AvailableStock = st.text_input("Available Stock")
-                
-                        submit = st.form_submit_button("Submit")
-                
-                        if submit:
-                            if action == "Add New Book":
-                                if book_name.strip() and author.strip():
-                                    try:
-                                        add_new_book(book_name, author, Instock, AvailableStock)
-                                        st.success(f"Book '{book_name}' by {author} added successfully!")
-                                    except Exception as e:
-                                        st.error(f"Error adding book: {e}")
-                                else:
-                                    st.warning("Please provide both Book Name and Author.")
-                            elif action == "Update Existing Book":
-                                if book_id.strip() and book_name.strip() and author.strip():
-                                    try:
-                                        update_book_info(book_id, book_name, author, Instock, AvailableStock)
-                                        st.success(f"Book ID '{book_id}' updated successfully!")
-                                    except Exception as e:
-                                        st.error(f"Error updating book: {e}")
-                                else:
-                                    st.warning("Please provide Book ID, Book Name, and Author.")
-                elif mode == "Add Student":
-                    st.subheader("Add Students Info")            
-                    # Book addition or update form
-                    #with st.form("book_form"):
+            cv2.putText(img, "Motion Detected (State: 1)", (10, 40), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
             
-                    student_name = st.text_input("Student Name")
-                    rf = st.text_input("RF Number")
-                    branch = st.text_input("Branch")
-                    year = st.text_input("Acadamic Year")
+            # Transition: Changed from NO motion to MOTION detected
+            if not self.motion_active:
+                self.motion_active = True
+                update_mobile_state('1')
+                self.current_session_id = insert_motion_start()
+                
+        else:
+            cv2.putText(img, "No Motion (State: 0)", (10, 40), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
             
-                    #Ssubmit = st.form_submit_button("Submit")
-                    if st.button("Add Student"):
-                            if student_name.strip() and rf.strip():
-                                try:
-                                    add_new_student(student_name, rf, branch, year)
-                                    st.success(f"Student '{student_name}' by {rf} added successfully!")
-                                except Exception as e:
-                                    st.error(f"Error adding book: {e}")
-    
-if __name__ == "__main__":
-    main()
+            # Transition: Changed from MOTION to NO motion detected
+            if self.motion_active:
+                self.motion_active = False
+                update_mobile_state('0')
+                update_motion_end(self.current_session_id)
+                self.current_session_id = None
+
+        return img
+
+    def on_ended(self):
+        """ Cleans up and clears database flags when user stops the stream """
+        if self.motion_active:
+            update_mobile_state('0')
+            update_motion_end(self.current_session_id)
+
+
+# --- Streamlit WebRTC Interface ---
+ctx = webrtc_streamer(
+    key="pose-detection",
+    mode=WebRtcMode.SENDRECV,
+    video_transformer_factory=PoseTransformer,
+    rtc_configuration={
+        "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+    },
+    media_stream_constraints={"video": True, "audio": False},
+)
+
+# Optional UI status indicators below the feed
+if ctx.state.playing:
+    st.success("Webcam stream is active. Monitoring for human poses...")
+else:
+    st.info("Click 'Start' above to open your webcam and start tracking.")
