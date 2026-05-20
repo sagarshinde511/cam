@@ -1,4 +1,5 @@
 streamlit
+cv2
 streamlit-webrtc
 mediapipe
 requests
